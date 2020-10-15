@@ -20,7 +20,6 @@ dim(dat_joined)
 #cleaning: checking for missing values
 length(dat_joined$NPERSONS)
 table(is.na(dat_joined$NPERSONS))
-table(is.na(dat_new$NPERSONS))
 table(is.na(datHH$NPERSONS))
 table(is.na(dat_joined$INCOME))
 table(is.na(datHH$INCOME))
@@ -36,6 +35,13 @@ dat_joined$edu_level<-fct_collapse(dat_joined$NR10, "None" = c("(00) none"),
                                                                  "(14) 2 years post-secondary"),
                                    "Bachelors"= "(15) Bachelors", "Above Bachelors"= "(16) Above Bachelors")
 
+dat_joined$Gender<- ifelse ((dat_joined$NR5 == "(1) Male"),1,0)
+
+dat_joined$non_resident_remits<- !(is.na(dat_joined$NR13A))
+
+#have to figure out education
+#dat_joined$Years_of_education<-mutate(dat_joined$edu_level)
+
 #making separate datasets for each state: same state/another state/abroad
 dat_same_state <- dat_joined %>% filter(NR8 == "(1) same state")
 dat_another_state <- dat_joined %>% filter(NR8 == "(2) another state")
@@ -45,8 +51,20 @@ dim(dat_same_state)     #8647 observations
 dim(dat_another_state)  #4698 observations
 dim(dat_abroad)         #881 observations
 
-#Starting with age and gender
+#Regression Analysis: Starting with age, gender and NNRn
 #create a new column for gender with {0,1}
-#lm(y~age+gender,data=name_of_dataset) 
 
+#Regression analysis of non-residents abroad
+lm.fit_1_abroad<-lm(non_resident_remits~NR6+Gender+NNR,data=dat_abroad) 
+lm.fit_2_abroad<-lm(NR13A~NR6+Gender+NNR,data=dat_abroad)
+
+#Regression analysis of non-residents in the same state
+lm.fit_1_same_state<-lm(non_resident_remits~NR6+Gender+NNR,data=dat_same_state) 
+lm.fit_2_same_state<-lm(NR13A~NR6+Gender+NNR,data=dat_same_state)
+
+#Regression analysis of non-residents in another state
+lm.fit_1_another_state<-lm(non_resident_remits~NR6+Gender+NNR,data=dat_another_state) 
+lm.fit_2_another_state<-lm(NR13A~NR6+Gender+NNR,data=dat_another_state)
+
+#Regression with interaction terms
 
