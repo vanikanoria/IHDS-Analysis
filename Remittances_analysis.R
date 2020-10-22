@@ -4,6 +4,10 @@ library("tidyverse")
 library("patchwork")
 library("dplyr")
 library("forcats")
+#install.packages("jtools")
+library("ggplot2")
+library("jtools")
+
 dat <- da36151.0007     #Non-resident dataset 
 datHH <- da36151.0002   #Household dataset
 dat_indiv<-da36151.0001 #individual datset
@@ -11,7 +15,7 @@ dat_indiv<-da36151.0001 #individual datset
 ##Join the datasets
 
 #picking up relevant columns from datHH
-datHH_slim <- datHH[,c("HHID","HHSPLITID","STATEID","DISTID","PSUID","INCOME","INCOMEPC","INCREMIT","NPERSONS","COPC")] 
+datHH_slim <- datHH[,c("HHID","HHSPLITID","STATEID","DISTID","PSUID","INCOME","INCOMEPC","INCREMIT","NPERSONS","COPC", "URBAN2011")] 
 #picking up relevant columns from dat
 dat_slim <- dat[,c("HHID","HHSPLITID","STATEID","DISTID","PSUID","NR8","NR13A","NR13B","NR10","NR5","NR6","NNR")]
 dat_joined<- left_join(dat_slim,datHH_slim, by= c("HHID"="HHID","HHSPLITID"="HHSPLITID","STATEID"="STATEID","DISTID"="DISTID","PSUID"="PSUID"))
@@ -35,12 +39,54 @@ dat_joined$edu_level<-fct_collapse(dat_joined$NR10, "None" = c("(00) none"),
                                                                  "(14) 2 years post-secondary"),
                                    "Bachelors"= "(15) Bachelors", "Above Bachelors"= "(16) Above Bachelors")
 
+dat_joined$edu_num<-fct_collapse(dat_joined$NR10, "0" = c("(00) none"),
+                                                        "1" = c("(01) 1st class","(02) 2nd class","(03) 3rd class",
+                                                                          "(04) 4th class", "(05) 5th class"),
+                                                        "2" = c("(06) 6th class","(07) 7th class","(08) 8th class",
+                                                                           "(09) 9th class","(10) Secondary"),
+                                                        "3" = c("(11) 11th Class","(12) High Secondary"),
+                                                        "4"= c("(13) 1 year post-secondary",
+                                                                                      "(14) 2 years post-secondary"),
+                                                        "5"= "(15) Bachelors", "6"= "(16) Above Bachelors")
+
+
+dat_joined$edu_num<- as.numeric(dat_joined$edu_num)-1
+
+#create a new column for gender with {0,1}
 dat_joined$Gender<- ifelse ((dat_joined$NR5 == "(1) Male"),1,0)
 
-dat_joined$non_resident_remits<- !(is.na(dat_joined$NR13A))
+#renaming the age column from NR6 to Age
+dat_joined <- dat_joined %>% rename(Age=NR6)
 
-#have to figure out education
-#dat_joined$Years_of_education<-mutate(dat_joined$edu_level)
+#renaming the remittance column (remittance sent to hh by that non-resident)
+#from NR13A to Remittance
+dat_joined <- dat_joined %>% rename(Remittance=NR13A)
+
+#renaming NPERSONS to hh_size
+dat_joined <- dat_joined %>% rename(hh_size=NPERSONS)
+
+#renaming NNR to num_non_res
+dat_joined <- dat_joined %>% rename(num_non_res=NNR)
+
+#making a new numerical variable for 'urban' variable using URBAN2011
+dat_joined <- dat_joined %>% mutate(urban=as.numeric(URBAN2011)-1)
+
+#boolean variable that returns true if the non-resident remits, false otherwise
+dat_joined$non_resident_remits<- !(is.na(dat_joined$Remittance))
+
+#create a column for household income minus remittance sent by that non-resident: hhY_minus_Remt
+dat_joined<-dat_joined %>% mutate (hhY_minus_Remt = ifelse(non_resident_remits, INCOME-Remittance,INCOME))
+
+#create a column for log of hhY_minus_Remt: log_hhY_minus_Remt
+dat_joined<-dat_joined %>% mutate (log_hhY_minus_Remt = ifelse(hhY_minus_Remt>0,log(hhY_minus_Remt),
+                                                               ifelse(hhY_minus_Remt<0, -log(abs(hhY_minus_Remt)), 0)))
+#EAG states
+#Making a separate column for numeric version of 'STATEID'
+dat_joined<-dat_joined %>% mutate(states_numeric=as.numeric(STATEID))
+#EAG states: 1 if the household belongs to the less relatively developed states of 
+#Jharkhand (1), Uttarakhand (5), Orissa (21), Chhattisgarh (22) and Madhya Pradesh (23), and
+#0 otherwise 
+dat_joined<-dat_joined %>% mutate(EAG = ifelse(states_numeric %in% c(1,5,21,22,23),1,0))
 
 #making separate datasets for each state: same state/another state/abroad
 dat_same_state <- dat_joined %>% filter(NR8 == "(1) same state")
@@ -51,20 +97,55 @@ dim(dat_same_state)     #8647 observations
 dim(dat_another_state)  #4698 observations
 dim(dat_abroad)         #881 observations
 
-#Regression Analysis: Starting with age, gender and NNRn
-#create a new column for gender with {0,1}
+###Regression Analysis: Starting with age, gender and num_non_res
 
 #Regression analysis of non-residents abroad
-lm.fit_1_abroad<-lm(non_resident_remits~NR6+Gender+NNR,data=dat_abroad) 
-lm.fit_2_abroad<-lm(NR13A~NR6+Gender+NNR,data=dat_abroad)
+lm_1_abroad<-lm(non_resident_remits~Age+Gender+num_non_res,data=dat_abroad) 
+lm_2_abroad<-lm(Remittance~Age+Gender+num_non_res,data=dat_abroad)
 
 #Regression analysis of non-residents in the same state
-lm.fit_1_same_state<-lm(non_resident_remits~NR6+Gender+NNR,data=dat_same_state) 
-lm.fit_2_same_state<-lm(NR13A~NR6+Gender+NNR,data=dat_same_state)
+lm_1_same_state<-lm(non_resident_remits~Age+Gender+num_non_res,data=dat_same_state) 
+lm_2_same_state<-lm(Remittance~Age+Gender+num_non_res,data=dat_same_state)
 
 #Regression analysis of non-residents in another state
-lm.fit_1_another_state<-lm(non_resident_remits~NR6+Gender+NNR,data=dat_another_state) 
-lm.fit_2_another_state<-lm(NR13A~NR6+Gender+NNR,data=dat_another_state)
+lm_1_another_state<-lm(non_resident_remits~Age+Gender+num_non_res,data=dat_another_state) 
+lm_2_another_state<-lm(Remittance~Age+Gender+num_non_res,data=dat_another_state)
+
+#Oct 22, 2020
+###Regression Analysis: with age, gender, education level, urban/rural, (household income-remittances), hh_size, EAG and num_non_res
+#Age^2 instead of age to account for non-linearities to age
+
+#Regression analysis of non-residents abroad
+lm_1_a<-lm(non_resident_remits~Age^2+Gender+num_non_res+edu_num+log_hhY_minus_Remt+hh_size+urban+EAG,data=dat_abroad) 
+lm_2_a<-lm(Remittance~Age^2+Gender+num_non_res+edu_num+log_hhY_minus_Remt+hh_size+urban+EAG,data=dat_abroad)
+
+#Regression analysis of non-residents in the same state
+lm_1_ss<-lm(non_resident_remits~Age^2+Gender+num_non_res+edu_num+log_hhY_minus_Remt+hh_size+urban+EAG,data=dat_same_state) 
+lm_2_ss<-lm(Remittance~Age^2+Gender+num_non_res+edu_num+log_hhY_minus_Remt+hh_size+urban+EAG,data=dat_same_state)
+
+#Regression analysis of non-residents in another state
+lm_1_as<-lm(non_resident_remits~Age^2+Gender+num_non_res+edu_num+log_hhY_minus_Remt+hh_size+urban+EAG,data=dat_another_state) 
+lm_2_as<-lm(Remittance~Age^2+Gender+num_non_res+edu_num+log_hhY_minus_Remt+hh_size+urban+EAG,data=dat_another_state)
 
 #Regression with interaction terms
+lm_2_as_interaction<-lm(Remittance~(Age^2)*Gender+num_non_res+edu_num+log_hhY_minus_Remt*Gender+urban+EAG,data=dat_another_state)
+
+
+
+#Getting summaries of regression coefficients
+#install.packages("broom")
+library("broom")
+
+#Printing regression coefficients as csv files
+#Using the function 'tidy' from broom
+
+path <- "/Users/vani/Documents/MyCode/IHDS_analysis/regression_output"
+write.csv(tidy(lm_1_as), file.path(path, "lm_1_as.csv"))
+write.csv(tidy(lm_2_as), file.path(path, "lm_2_as.csv"))
+write.csv(tidy(lm_2_as_interaction), file.path(path, "lm_2_as_interaction.csv"))
+write.csv(tidy(lm_1_ss), file.path(path, "lm_1_ss.csv"))
+write.csv(tidy(lm_2_ss), file.path(path, "lm_2_ss.csv"))
+write.csv(tidy(lm_1_a), file.path(path, "lm_1_a.csv"))
+write.csv(tidy(lm_2_a), file.path(path, "lm_2_a.csv"))
+
 
