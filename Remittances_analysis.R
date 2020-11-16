@@ -17,7 +17,7 @@ dat_indiv<-da36151.0001 #individual datset
 #picking up relevant columns from datHH
 datHH_slim <- datHH[,c("HHID","HHSPLITID","STATEID","DISTID","PSUID","INCOME","INCOMEPC","INCREMIT","NPERSONS","COPC", "URBAN2011")] 
 #picking up relevant columns from dat
-dat_slim <- dat[,c("HHID","HHSPLITID","STATEID","DISTID","PSUID","NR8","NR13A","NR13B","NR10","NR5","NR6","NNR")]
+dat_slim <- dat[,c("HHID","HHSPLITID","STATEID","DISTID","PSUID","NR8","NR13A","NR13B","NR10","NR5","NR6","NNR","NR7","NR4")]
 dat_joined<- left_join(dat_slim,datHH_slim, by= c("HHID"="HHID","HHSPLITID"="HHSPLITID","STATEID"="STATEID","DISTID"="DISTID","PSUID"="PSUID"))
 dim(dat_joined)
 
@@ -67,6 +67,20 @@ dat_joined <- dat_joined %>% rename(hh_size=NPERSONS)
 
 #renaming NNR to num_non_res
 dat_joined <- dat_joined %>% rename(num_non_res=NNR)
+
+#renaming NR4 to relation_to_hh
+dat_joined <- dat_joined %>% rename(relation_to_hh=NR4)
+
+#creating dummy variables for relation_to_hh : TO DO!!!!!!!!!!!!!
+
+
+#renaming NR7 to marital_status
+dat_joined <- dat_joined %>% rename(marital_status=NR7)
+
+#creating 3 dummy variables for marital status: Married, unmarried, widowed
+dat_joined<-dat_joined %>% mutate(married = ifelse(marital_status == "(1) Married",1,0))
+dat_joined<-dat_joined %>% mutate(unmarried = ifelse(marital_status == "(2) Unmarried",1,0))
+dat_joined<-dat_joined %>% mutate(widowed = ifelse(marital_status == "(3) Widowed",1,0))
 
 #making a new numerical variable for 'urban' variable using URBAN2011
 dat_joined <- dat_joined %>% mutate(urban=as.numeric(URBAN2011)-1)
@@ -131,7 +145,6 @@ lm_2_as<-lm(Remittance~Age^2+Gender+num_non_res+edu_num+log_hhY_minus_Remt+hh_si
 lm_2_as_interaction<-lm(Remittance~(Age^2)*Gender+num_non_res+edu_num+log_hhY_minus_Remt*Gender+urban+EAG,data=dat_another_state)
 
 
-
 #Getting summaries of regression coefficients
 #install.packages("broom")
 library("broom")
@@ -147,5 +160,44 @@ write.csv(tidy(lm_1_ss), file.path(path, "lm_1_ss.csv"))
 write.csv(tidy(lm_2_ss), file.path(path, "lm_2_ss.csv"))
 write.csv(tidy(lm_1_a), file.path(path, "lm_1_a.csv"))
 write.csv(tidy(lm_2_a), file.path(path, "lm_2_a.csv"))
+
+#Nov 4, 2020
+#some corrections
+#1.age besides age^2 to account for non-linearities to age
+#2.log for remittance
+#3. fixing how I deal with negative income
+# min(dat_joined$hhY_minus_Remt) = -777799
+# so add that before taking the log
+# sum(as.numeric(dat_joined$hhY_minus_Remt<0)) = 291
+
+#create a column for log of hhY_minus_Remt: log_hhY_minus_Remt
+dat_joined<-dat_joined %>% mutate (log_hhY_minus_Remt = log(hhY_minus_Remt + 777799))
+
+
+#Regression analysis of non-residents abroad
+lm_1_a_Nov4<-lm(non_resident_remits~Age+Age^2+Gender+num_non_res+edu_num+log_hhY_minus_Remt+hh_size+urban+EAG+married+unmarried+widowed,data=dat_abroad) 
+lm_2_a_Nov4<-lm(log(Remittance)~Age+Age^2+Gender+num_non_res+edu_num+log_hhY_minus_Remt+hh_size+urban+EAG+married+unmarried+widowed,data=dat_abroad)
+
+write.csv(tidy(lm_1_a_Nov4), file.path(path, "lm_1_a_Nov4.csv"))
+write.csv(tidy(lm_2_a_Nov4), file.path(path, "lm_2_a_Nov4.csv"))
+
+# Model 2: dummy variable for education
+
+# dat_joined$edu_num<-dat_joined$NR10, "0" = c("(00) none"),
+#                                  "1" = c("(01) 1st class","(02) 2nd class","(03) 3rd class",
+#                                          "(04) 4th class", "(05) 5th class"),
+#                                  "2" = c("(06) 6th class","(07) 7th class","(08) 8th class",
+#                                          "(09) 9th class","(10) Secondary"),
+#                                  "3" = c("(11) 11th Class","(12) High Secondary"),
+#                                  "4"= c("(13) 1 year post-secondary",
+#                                         "(14) 2 years post-secondary"),
+#                                  "5"= "(15) Bachelors", "6"= "(16) Above Bachelors")
+
+
+#creating dummy variables:
+
+
+
+
 
 
