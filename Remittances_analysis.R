@@ -28,6 +28,13 @@ table(is.na(datHH$NPERSONS))
 table(is.na(dat_joined$INCOME))
 table(is.na(datHH$INCOME))
 
+#cleaning: removing observations with missing values of 
+#location of nonresident(abroad/same state/another state) 
+dat_joined<-dat_joined%>% drop_na(NR8)
+
+dim(dat_joined)
+dat_joined%>%group_by(NR8)%>%count()
+
 #make new column collapsing by education level
 dat_joined$edu_level<-fct_collapse(dat_joined$NR10, "None" = c("(00) none"),
                                    "Classes 1-5" = c("(01) 1st class","(02) 2nd class","(03) 3rd class",
@@ -38,7 +45,17 @@ dat_joined$edu_level<-fct_collapse(dat_joined$NR10, "None" = c("(00) none"),
                                    "1-2 years post-secondary"= c("(13) 1 year post-secondary",
                                                                  "(14) 2 years post-secondary"),
                                    "Bachelors"= "(15) Bachelors", "Above Bachelors"= "(16) Above Bachelors")
+dat_joined$edu_num2<-fct_collapse(dat_joined$NR10, "0" = c("(00) none"),
+                                 "1" = c("(01) 1st class","(02) 2nd class","(03) 3rd class",
+                                         "(04) 4th class", "(05) 5th class"),
+                                 "2" = c("(06) 6th class","(07) 7th class","(08) 8th class",
+                                         "(09) 9th class","(10) Secondary"),
+                                 "3" = c("(11) 11th Class","(12) High Secondary"),
+                                 "4"= c("(13) 1 year post-secondary",
+                                        "(14) 2 years post-secondary"),
+                                 "5"= "(15) Bachelors", "6"= "(16) Above Bachelors")
 
+dat_joined$edu_num2<- dat_joined$edu_num2+1
 dat_joined$edu_num<-fct_collapse(dat_joined$NR10, "0" = c("(00) none"),
                                                         "1" = c("(01) 1st class","(02) 2nd class","(03) 3rd class",
                                                                           "(04) 4th class", "(05) 5th class"),
@@ -49,8 +66,8 @@ dat_joined$edu_num<-fct_collapse(dat_joined$NR10, "0" = c("(00) none"),
                                                                                       "(14) 2 years post-secondary"),
                                                         "5"= "(15) Bachelors", "6"= "(16) Above Bachelors")
 
-
 dat_joined$edu_num<- as.numeric(dat_joined$edu_num)-1
+dat_joined$edu_num<-factor(dat_joined$edu_num)
 
 #create a new column for gender with {0,1}
 dat_joined$Gender<- ifelse ((dat_joined$NR5 == "(1) Male"),1,0)
@@ -71,11 +88,14 @@ dat_joined <- dat_joined %>% rename(num_non_res=NNR)
 #renaming NR4 to relation_to_hh
 dat_joined <- dat_joined %>% rename(relation_to_hh=NR4)
 
-#creating dummy variables for relation_to_hh : TO DO!!!!!!!!!!!!!
-
-
 #renaming NR7 to marital_status
 dat_joined <- dat_joined %>% rename(marital_status=NR7)
+
+#renaming NR5 to sex
+dat_joined <- dat_joined %>% rename(sex=NR5)
+
+#cleaning: removing observations with missing values of sex
+dat_joined<-dat_joined%>% drop_na(sex)
 
 #creating 3 dummy variables for marital status: Married, unmarried, widowed
 dat_joined<-dat_joined %>% mutate(married = ifelse(marital_status == "(1) Married",1,0))
@@ -101,6 +121,11 @@ dat_joined<-dat_joined %>% mutate(states_numeric=as.numeric(STATEID))
 #Jharkhand (1), Uttarakhand (5), Orissa (21), Chhattisgarh (22) and Madhya Pradesh (23), and
 #0 otherwise 
 dat_joined<-dat_joined %>% mutate(EAG = ifelse(states_numeric %in% c(1,5,21,22,23),1,0))
+
+dat_joined%>% filter(!is.na(Remittance))%>%count(!is.na(NR13B))
+
+#create a column for log of hhY_minus_Remt: log_hhY_minus_Remt
+dat_joined<-dat_joined %>% mutate (log_hhY_minus_Remt = log(hhY_minus_Remt + 777799))
 
 #making separate datasets for each state: same state/another state/abroad
 dat_same_state <- dat_joined %>% filter(NR8 == "(1) same state")
@@ -170,31 +195,164 @@ write.csv(tidy(lm_2_a), file.path(path, "lm_2_a.csv"))
 # so add that before taking the log
 # sum(as.numeric(dat_joined$hhY_minus_Remt<0)) = 291
 
-#create a column for log of hhY_minus_Remt: log_hhY_minus_Remt
-dat_joined<-dat_joined %>% mutate (log_hhY_minus_Remt = log(hhY_minus_Remt + 777799))
-
 
 #Regression analysis of non-residents abroad
 lm_1_a_Nov4<-lm(non_resident_remits~Age+Age^2+Gender+num_non_res+edu_num+log_hhY_minus_Remt+hh_size+urban+EAG+married+unmarried+widowed,data=dat_abroad) 
 lm_2_a_Nov4<-lm(log(Remittance)~Age+Age^2+Gender+num_non_res+edu_num+log_hhY_minus_Remt+hh_size+urban+EAG+married+unmarried+widowed,data=dat_abroad)
 
-write.csv(tidy(lm_1_a_Nov4), file.path(path, "lm_1_a_Nov4.csv"))
-write.csv(tidy(lm_2_a_Nov4), file.path(path, "lm_2_a_Nov4.csv"))
+#Jan 6, 2021
+mod.both1<-stepAIC(lm_1_a_Nov4, direction="both",trace = F)
+summary(mod.both1)
+lm_1_a_Nov4<-lm(non_resident_remits~Age+Age^2+Gender+num_non_res+edu_num2+log_hhY_minus_Remt+hh_size+urban+EAG+married+unmarried+widowed,data=dat_abroad) 
+lm_1_as<-lm(non_resident_remits~Age+Age^2+Gender+num_non_res+edu_num+log_hhY_minus_Remt+hh_size+urban+EAG+married+unmarried+widowed,data=dat_another_state)
+lm_1_ss<-lm(non_resident_remits~Age+Age^2+Gender+num_non_res+edu_num+log_hhY_minus_Remt+hh_size+urban+EAG+married+unmarried+widowed,data=dat_same_state)
+summary(lm_1_ss)
+summary(lm_1_a_Nov4)
+plotResiduals(lm_1_as)
+plotResiduals(lm_1_a_Nov4)
+plotResiduals(lm_1_ss)
+#Residual plot: 2 parallel lines
+#Try transforming the model
 
-# Model 2: dummy variable for education
+#try using a logistic regression model:
 
-# dat_joined$edu_num<-dat_joined$NR10, "0" = c("(00) none"),
-#                                  "1" = c("(01) 1st class","(02) 2nd class","(03) 3rd class",
-#                                          "(04) 4th class", "(05) 5th class"),
-#                                  "2" = c("(06) 6th class","(07) 7th class","(08) 8th class",
-#                                          "(09) 9th class","(10) Secondary"),
-#                                  "3" = c("(11) 11th Class","(12) High Secondary"),
-#                                  "4"= c("(13) 1 year post-secondary",
-#                                         "(14) 2 years post-secondary"),
-#                                  "5"= "(15) Bachelors", "6"= "(16) Above Bachelors")
+#Same state
+logit_model_ss_1<-glm(non_resident_remits~Age+Age^2+Gender+num_non_res+edu_num+log_hhY_minus_Remt+hh_size+urban+EAG+married+unmarried+widowed,data=dat_same_state,binomial)
+summary((logit_model_ss_1))
+plot(logit_model_ss)
 
+#Another state
+logit_model_as_1<-glm(non_resident_remits~Age+Age^2+Gender+num_non_res+edu_num+log_hhY_minus_Remt+hh_size+urban+EAG,data=dat_another_state,binomial)
+summary((logit_model_as))
+plot(logit_model_as)
 
-#creating dummy variables:
+#Abroad
+logit_model_a_1<-glm(non_resident_remits~Age+Age^2+Gender+num_non_res+edu_num+log_hhY_minus_Remt+hh_size+urban+EAG+married+unmarried+widowed,data=dat_abroad,binomial)
+##ALGORITHM DID NOT CONVERGE
+summary((logit_model_a))
+probabilities <- predict(logit_model_a, type = "response")
+dat_abroad$logit<- log(probabilities/(1-probabilities))
+
+#Remittances analysis
+#Same state:
+lm_2_ss_Jan6<-lm(log(Remittance)~Age+Age^2+Gender+num_non_res+edu_num+log_hhY_minus_Remt+hh_size+urban+EAG+married+unmarried+widowed,data=dat_same_state)
+summary(lm_2_ss_Jan6)
+plotResiduals(lm_2_ss_Jan6)
+#normally distributed!
+
+#Another state:
+lm_2_as_Jan6<-lm(log(Remittance)~Age+Age^2+Gender+num_non_res+edu_num+log_hhY_minus_Remt+hh_size+urban+EAG+married+unmarried+widowed,data=dat_another_state)
+summary(lm_2_as_Jan6)
+plotResiduals(lm_2_as_Jan6)
+#roughly normally distributed!
+
+#Abroad:
+dat_abroad<-dat_abroad%>%drop_na(Remittance)
+dat_abroad<-dat_abroad%>%drop_na(log_hhY_minus_Remt)
+options(na.action="na.exclude")
+dat_abroad$Remittance[which(is.nan(dat_abroad$Remittance))] = NA
+dat_abroad$Remittance[which(dat_abroad$Remittance==Inf)] = NA
+dat_abroad$log_hhY_minus_Remt[which(dat_abroad$log_hhY_minus_Remt==Inf)] = NA
+dat_abroad$log_hhY_minus_Remt[which(dat_abroad$log_hhY_minus_Remt==-Inf)] = NA
+dat_abroad$log_hhY_minus_Remt[which(is.nan(dat_abroad$log_hhY_minus_Remt))] = NA
+
+lm_2_a_Jan6<-lm(log(Remittance)~Age+Age^2+Gender+num_non_res+edu_num+log_hhY_minus_Remt+hh_size+urban+EAG+married+unmarried+widowed,data=dat_abroad)
+remittances_abroad.res = resid(lm_2_a_Jan6)
+#We now plot the residual against the observed values of the variable waiting.
+plot(lm_2_a_Jan6$fitted.values, lm_2_a_Jan6$residuals, ylab="Residuals", xlab="Fitted values") 
+abline(0, 0) 
+#approximately normally distributed
+
+write.csv(tidy(logit_model_ss_1), file.path(path, "logit_model_ss_1.csv"))
+write.csv(tidy(logit_model_as_1), file.path(path, "logit_model_as_1.csv"))
+write.csv(tidy(lm_2_ss_Jan6), file.path(path, "lm_2_ss_now.csv"))
+write.csv(tidy(lm_2_as_Jan6), file.path(path, "lm_2_as_Jan6<.csv"))
+write.csv(tidy(lm_2_a_Jan6), file.path(path, "lm_2_a_Jan6.csv"))
+
+AIC(lm_2_a_Jan6)
+BIC(lm_2_a_Jan6)
+
+#both forward and backwards stepwise selecyion
+library("MASS")
+mod.both<-stepAIC(lm_2_a_Nov4, direction="both",trace = F)
+summary(mod.both)
+AIC(mod.both)
+BIC(mod.both)
+
+#the previous model is better
+
+######################################
+# LASSO
+######################################
+library(glmnet)
+library(coefplot)
+
+#Age+Age^2+Gender+num_non_res+edu_num+log_hhY_minus_Remt+hh_size+urban+EAG+married+unmarried+widowed,data=dat_abroad)
+xfactor<-model.matrix(non_resident_remits ~ (.)^2, data=ggdat)[,-1]
+
+x1<-model.matrix(non_resident_remits ~ Age+Age^2+Gender+num_non_res+edu_num+log_hhY_minus_Remt+hh_size+urban+EAG+married+unmarried+widowed,data=dat_abroad)
+mod.lasso<-cv.glmnet(x=x1,y=dat_abroad$non_resident_remits,alpha=1) #an object of class 
+#"cv.glmnet" is returned,
+#which is a list with the ingredients of the cross-validation fit. 
+
+coef(mod.lasso, "lambda.min") #minimum cross validation error
+coef(mod.lasso, "lambda.1se") #most regularized model such that error
+#is within one standard error of the minimum
+extract.coef(mod.lasso)
+
+# which variable to use fixed effects on? STATEID
+
+fixed.dum <-lm(log(Remittance) ~ Age+Age^2+Gender+num_non_res+edu_num+log_hhY_minus_Remt+hh_size+urban+married+unmarried+widowed+factor(STATEID) - 1, data = dat_another_state)
+summary(fixed.dum)
+
+fixed.dum2 <-lm(log(Remittance) ~ log_hhY_minus_Remt+factor(STATEID) - 1, data = dat_another_state)
+summary(fixed.dum2)
+yhat <- fixed.dum2$fitted
+#install.packages("gplots")
+#install.packages("plm")
+library(plm)       #
+library(gplots)    # Various programing tools for plotting
+library("car")
+dataPanel101 <- plm.data(dat_another_state, index=c("log_hhY_minus_Remt","log(Remittance)"))
+scatterplot(yhat ~ (dat_another_state$log_hhY_minus_Remt |dat_another_state$STATEID,  xlab ="log_hhY_minus_Remt", ylab ="log(Remittance)", boxplots = FALSE,smooth = FALSE))
+abline(lm(dataPanel101$y~dataPanel101$x1),lwd=3, col="red")
+
+#Comparison of propensity of non-resident to remit across kind of migration and sex
+dat_abroad%>%filter(sex=='(1) Male') %>% pull(non_resident_remits) %>% summary()
+dat_abroad%>%filter(sex=='(2) Female') %>% pull(non_resident_remits) %>% summary()
+
+dat_same_state%>%filter(sex=='(1) Male') %>% pull(non_resident_remits) %>% summary()
+dat_same_state%>%filter(sex=='(2) Female') %>% pull(non_resident_remits) %>% summary()
+
+dat_another_state%>%filter(sex=='(1) Male') %>% pull(non_resident_remits) %>% summary()
+dat_another_state%>%filter(sex=='(2) Female') %>% pull(non_resident_remits) %>% summary()
+
+#Comparison of remittances across kind of migration and sex
+dat_abroad%>%filter(sex=='(1) Male') %>% pull(Remittance) %>% summary()
+dat_abroad%>%filter(sex=='(2) Female') %>% pull(Remittance) %>% summary()
+
+dat_same_state%>%filter(sex=='(1) Male') %>% pull(Remittance) %>% summary()
+dat_same_state%>%filter(sex=='(2) Female') %>% pull(Remittance) %>% summary()
+
+dat_another_state%>%filter(sex=='(1) Male') %>% pull(Remittance) %>% summary()
+dat_another_state%>%filter(sex=='(2) Female') %>% pull(Remittance) %>% summary()
+
+#Is the difference of means significant?
+
+#abroad
+t.test(x=dat_abroad%>%filter(sex=='(1) Male') %>% pull(Remittance), y=dat_abroad%>%filter(sex=='(2) Female') %>% pull(Remittance))
+#the difference in means is not significant
+
+#same state
+t.test(x=dat_same_state%>%filter(sex=='(1) Male') %>% pull(Remittance), y=dat_same_state%>%filter(sex=='(2) Female') %>% pull(Remittance))
+#the difference in means IS significant
+
+#another state
+t.test(x=dat_another_state%>%filter(sex=='(1) Male') %>% pull(Remittance), y=dat_another_state%>%filter(sex=='(2) Female') %>% pull(Remittance))
+#the difference in means is not significant
+
+#Looking at remittances sent by nonresidents of age<=15
+dat_joined%>% filter(Age<=15) %>% group_by(NR8) %>% count(is.na(Remittance))
 
 
 
